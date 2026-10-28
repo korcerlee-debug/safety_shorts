@@ -99,7 +99,7 @@ if st.session_state.cuts:
   st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 생성")
   st.info(
       "원하는 컷의 텍스트나 이미지 프롬프트를 수정한 뒤 '이미지 생성' 버튼을"
-      " 누할 수 있습니다."
+      " 누를 수 있습니다."
   )
 
   for i, cut in enumerate(st.session_state.cuts):
@@ -120,27 +120,30 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("쇼츠 비율(9:16) 맞춤 이미지 렌더링 중..."):
+          with st.spinner("세로형 쇼츠 카드 렌더링 중..."):
             try:
-              # 쇼츠 전용 9:16 비율 해상도 설정 (너비 720, 높이 1280)
+              # 9:16 비율 세로형 해상도 (720 x 1280)
               img_width, img_height = 720, 1280
+              # 모던한 다크/시네마틱 배경 톤
               img = Image.new(
-                  "RGB", (img_width, img_height), color=(245, 247, 250)
+                  "RGB", (img_width, img_height), color=(25, 28, 36)
               )
               draw = ImageDraw.Draw(img)
 
-              # 상단 타이틀 박스 및 본문 내용 시각화 디자인
-              draw.rectangle(
-                  [50, 150, img_width - 50, 450],
-                  fill=(255, 255, 255),
-                  outline=(210, 215, 225),
-                  width=3,
+              # 세로형 카드 프레임 박스 디자인
+              draw.rounded_rectangle(
+                  [40, 40, img_width - 40, img_height - 40],
+                  radius=24,
+                  fill=(38, 43, 54),
+                  outline=(70, 80, 100),
+                  width=4,
               )
-              draw.rectangle(
-                  [50, 520, img_width - 50, img_height - 150],
-                  fill=(255, 255, 255),
-                  outline=(210, 215, 225),
-                  width=3,
+
+              # 상단 컷 번호 배지 영역
+              draw.rounded_rectangle(
+                  [80, 90, 260, 170],
+                  radius=12,
+                  fill=(220, 60, 60),
               )
 
               try:
@@ -148,33 +151,65 @@ if st.session_state.cuts:
               except:
                 font_title = None
 
+              # 텍스트 배치 (세로 정렬감 유지)
               draw.text(
-                  (80, 180),
-                  f"[ CUT {i+1} SCENE ]",
-                  fill=(200, 50, 50),
-                  font=font_title,
-              )
-              draw.text(
-                  (80, 550),
-                  "Visual Prompt:",
-                  fill=(100, 100, 100),
+                  (110, 112),
+                  f"CUT {i+1} SCENE",
+                  fill=(255, 255, 255),
                   font=font_title,
               )
 
-              # 프롬프트 문구 단순화 렌더링 (오류 방지)
-              prompt_text = cut["image_prompt"]
+              # 나레이션 자막 가이드 박스
+              draw.rounded_rectangle(
+                  [80, 220, img_width - 80, 420],
+                  radius=16,
+                  fill=(48, 55, 68),
+              )
               draw.text(
-                  (80, 600),
-                  prompt_text[:120] + ("..." if len(prompt_text) > 120 else ""),
-                  fill=(30, 30, 30),
+                  (110, 250),
+                  "[ 자막 / 나레이션 ]",
+                  fill=(140, 180, 255),
                   font=font_title,
               )
+              narr_text = cut["narration"]
+              draw.text(
+                  (110, 290),
+                  narr_text[:80] + ("..." if len(narr_text) > 80 else ""),
+                  fill=(240, 240, 240),
+                  font=font_title,
+              )
+
+              # 이미지 프롬프트 가이드 박스
+              draw.rounded_rectangle(
+                  [80, 470, img_width - 80, img_height - 100],
+                  radius=16,
+                  fill=(48, 55, 68),
+              )
+              draw.text(
+                  (110, 500),
+                  "[ 이미지 생성 프롬프트 ]",
+                  fill=(255, 200, 100),
+                  font=font_title,
+              )
+
+              prompt_text = cut["image_prompt"]
+              # 프롬프트 내용 길이에 맞춰 깔끔하게 출력
+              y_pos = 550
+              for chunk_start in range(0, min(len(prompt_text), 300), 40):
+                chunk = prompt_text[chunk_start : chunk_start + 40]
+                draw.text(
+                    (110, y_pos),
+                    chunk,
+                    fill=(220, 220, 220),
+                    font=font_title,
+                )
+                y_pos += 35
 
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{i+1}.png"
               img.save(img_path)
               cut["image_path"] = img_path
-              st.success(f"컷 {i+1} 쇼츠 비율(9:16) 이미지 생성 성공!")
+              st.success(f"컷 {i+1} 세로형 쇼츠 카드 생성 완료!")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -183,7 +218,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} 미리보기 (9:16)",
+              caption=f"컷 {i+1} 세로형 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
