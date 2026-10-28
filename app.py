@@ -2,7 +2,7 @@ from io import BytesIO
 import os
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from google import genai
 import streamlit as st
 
@@ -56,7 +56,7 @@ if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
     st.error("내용을 입력해주세요.")
   else:
     with st.spinner(
-        "AI가 안전 글을 분석하여 쇼츠 구성과 이미지 프롬프트를 만드는 중..."
+        "AI가 글을 분석하여 쇼츠 구성과 이미지 프롬프트를 만드는 중..."
     ):
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
@@ -120,30 +120,12 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("AI 일러스트 이미지를 생성하는 중..."):
+          with st.spinner("일러스트 이미지 카드를 생성하는 중..."):
             try:
-              # 표준 개발자 API 환경과 호환되는 고품질 이미지 생성 우회 경로 호출
-              image_gen_prompt = (
-                  f"Create a vibrant, high-quality vertical 9:16 digital"
-                  f" illustration depicting: {cut['image_prompt']}"
-              )
-
-              # 이미지 생성을 위해 우회형 안전 호출 모델 실행
-              img_response = client.models.generate_content(
-                  model="gemini-3.8-flash",
-                  contents=[
-                      (
-                          "Generate a visual representation, color palette, and"
-                          " detailed scene rendering based on this prompt:"
-                      ),
-                      image_gen_prompt,
-                  ],
-              )
-
-              # 실제 시각적 몰입감을 주는 고해상도 일러스트 콘셉트 캔버스 생성 (9:16 비율)
+              # 9:16 비율 세로형 해상도 (720 x 1280)
               img_width, img_height = 720, 1280
               
-              # 프롬프트 키워드에 맞춰 색상과 분위기가 다른 고유 일러스트 패턴 생성
+              # 프롬프트 내용에 따라 고유한 배경 색상 및 패턴 생성
               import hashlib
               hash_val = int(hashlib.md5(cut["image_prompt"].encode()).hexdigest(), 16)
               r_bg = 30 + (hash_val % 40)
@@ -153,16 +135,13 @@ if st.session_state.cuts:
               img = Image.new("RGB", (img_width, img_height), color=(r_bg, g_bg, b_bg))
               draw = ImageDraw.Draw(img)
 
-              # 일러스트풍의 입체적인 비주얼 요소 및 아트 프레임 구성
+              # 프레임 및 레이아웃 박스 디자인
               draw.rectangle([50, 80, img_width - 50, img_height - 120], fill=(255, 255, 255), outline=(200, 210, 220), width=5)
-              
-              # 내부 감성 일러스트 가이드라인 박스 (그림 영역)
               draw.rectangle([80, 120, img_width - 80, 750], fill=(240, 244, 248), outline=(220, 225, 235), width=2)
               
-              # 중앙에 일러스트 핵심 주제 시각 표현
-              draw.text((110, 160), f"[ AI ILLUSTRATION SCENE {i+1} ]", fill=(180, 40, 40))
+              draw.text((110, 160), f"[ ILUSTRATION SCENE {i+1} ]", fill=(180, 40, 40))
               
-              # 프롬프트 내용을 일러스트 설명 텍스트로 깔끔하게 배치
+              # 프롬프트 내용을 텍스트로 깔끔하게 배치
               p_text = cut["image_prompt"]
               y_pos = 220
               for chunk_idx in range(0, min(len(p_text), 350), 38):
@@ -170,7 +149,7 @@ if st.session_state.cuts:
                 draw.text((110, y_pos), chunk_str, fill=(40, 45, 55))
                 y_pos += 32
 
-              # 하단 나레이션 미리보기 영역 추가
+              # 하단 나레이션 미리보기 영역
               draw.rectangle([80, 800, img_width - 80, img_height - 160], fill=(255, 250, 240), outline=(230, 210, 180), width=2)
               draw.text((110, 830), "Narration Subtitle:", fill=(200, 120, 30))
               
@@ -181,7 +160,7 @@ if st.session_state.cuts:
               img_path = f"temp_images/cut_{i+1}.png"
               img.save(img_path)
               cut["image_path"] = img_path
-              st.success(f"컷 {i+1} AI 일러스트 이미지 생성 성공!")
+              st.success(f"컷 {i+1} 일러스트 이미지 생성 성공!")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
