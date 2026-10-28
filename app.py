@@ -57,7 +57,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
   if not safety_text:
     st.error("내용을 입력해주세요.")
   else:
-    with st.spinner("AI가 쇼츠 시나리오를 구성하는 중..."):
+    with st.spinner("AI가 쇼츠 시나리오를 구성하는 중... (잠시만 기다려주세요)"):
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
             조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(15자 이내 권장)로 작성해주세요.
@@ -73,8 +73,8 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
       
       response = None
       success = False
-      # 안정적인 표준 모델로 변경 및 타임아웃/예외처리 강화
-      for attempt in range(3):
+      # 안정적인 표준 모델 사용 및 재시도 횟수 확대
+      for attempt in range(5):
         try:
           response = client.models.generate_content(
               model="gemini-2.5-flash",
@@ -84,7 +84,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
             success = True
             break
         except Exception as e:
-          time.sleep(2)
+          time.sleep(3)
 
       if not success:
         st.error("서버 응답이 지연되고 있습니다. 잠시 후 다시 버튼을 눌러주세요.")
@@ -136,14 +136,15 @@ if st.session_state.cuts:
         }
 
         cut_success = False
-        for attempt in range(4):
+        # 일괄 생성 시 각 컷마다 충분한 재시도 기회 부여
+        for attempt in range(5):
           try:
             img_res = requests.get(img_url, headers=headers, timeout=60)
             if img_res.status_code == 200:
               image = Image.open(BytesIO(img_res.content)).convert("RGB")
               image = image.resize((720, 1280))
 
-              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 870 ~ 1040, 6번째 맨 아랫칸은 비워둠)
+              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 870 ~ 1040, 6번째 맨 아랫칸은 비워둠, 폰트 크기 44)
               draw = ImageDraw.Draw(image)
               draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
               draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
@@ -179,7 +180,8 @@ if st.session_state.cuts:
             time.sleep(3)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        time.sleep(5.0)
+        # 일괄 생성 시 서버 차단(402)을 막기 위해 컷마다 6초간 충분히 대기
+        time.sleep(6.0)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
@@ -229,7 +231,7 @@ if st.session_state.cuts:
               }
 
               success = False
-              for attempt in range(4):
+              for attempt in range(5):
                 img_res = requests.get(img_url, headers=headers, timeout=60)
                 if img_res.status_code == 200:
                   image = Image.open(BytesIO(img_res.content)).convert("RGB")
