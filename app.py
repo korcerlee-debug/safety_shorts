@@ -119,7 +119,6 @@ if st.session_state.cuts:
       status_text.text(f"진행 중: 총 {total_cuts}컷 중 {idx+1}번째 컷 생성 중...")
       try:
         user_prompt = cut["image_prompt"]
-        # 실사 느낌을 배제하고 단순한 플랫 벡터 일러스트 스타일로 엄격하게 고정
         clean_prompt = (
             f"{user_prompt}, vertical 9:16 aspect ratio, simple flat vector"
             " illustration, minimalist cartoon style, clean vector art,"
@@ -139,22 +138,32 @@ if st.session_state.cuts:
         cut_success = False
         for attempt in range(3):
           try:
-            img_res = requests.get(img_url, headers=headers, timeout=45)
+            img_res = requests.get(img_url, headers=headers, timeout=50)
             if img_res.status_code == 200:
               image = Image.open(BytesIO(img_res.content)).convert("RGB")
               image = image.resize((720, 1280))
 
+              # 하단 자막 바 및 텍스트 합성
               draw = ImageDraw.Draw(image)
               draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
               draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
 
-              try:
-                font = ImageFont.truetype("malgun.ttf", 36)
-              except:
+              # 리눅스/윈도우 공통 폰트 로드 안전 장치
+              font = None
+              font_paths = [
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                  "malgun.ttf",
+                  "DejaVuSans-Bold.ttf"
+              ]
+              for fp in font_paths:
                 try:
-                  font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
+                  font = ImageFont.truetype(fp, 32)
+                  break
                 except:
-                  font = ImageFont.load_default()
+                  continue
+              if font is None:
+                font = ImageFont.load_default()
 
               narration_text = cut["narration"]
               draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
@@ -170,8 +179,7 @@ if st.session_state.cuts:
           time.sleep(1)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        # 서버 과부하를 막기 위해 컷마다 3초씩 안전 여유 시간 부여
-        time.sleep(3.0)
+        time.sleep(2.5) # 서버 부하 방지 대기 시간
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
@@ -231,9 +239,20 @@ if st.session_state.cuts:
                   draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
                   draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
 
-                  try:
-                    font = ImageFont.truetype("malgun.ttf", 36)
-                  except:
+                  font = None
+                  font_paths = [
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                      "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                      "malgun.ttf",
+                      "DejaVuSans-Bold.ttf"
+                  ]
+                  for fp in font_paths:
+                    try:
+                      font = ImageFont.truetype(fp, 32)
+                      break
+                    except:
+                      continue
+                  if font is None:
                     font = ImageFont.load_default()
 
                   narration_text = cut["narration"]
@@ -260,7 +279,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} 일러스트 미리보기 (9:16)",
+              caption=f"컷 {i+1} 자막 포함 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
