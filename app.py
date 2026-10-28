@@ -4,7 +4,7 @@ import time
 import urllib.parse
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from google import genai
 import requests
 import streamlit as st
@@ -44,28 +44,29 @@ client = genai.Client(api_key=api_key)
 if "cuts" not in st.session_state:
   st.session_state.cuts = []
 
-st.header("1. 안전 관련 글 입력")
+st.header("1. 쇼츠 시나리오 글 입력")
 safety_text = st.text_area(
-    "쇼츠로 만들고 싶은 안전 수칙, 사고 사례, 현장 가이드 등의 글을"
-    " 입력하세요.",
+    "쇼츠로 만들고 싶은 내용, 안전 수칙, 썰, 정보 등의 글을 입력하세요.",
     height=150,
     placeholder=(
-        "예: 밀폐공간 작업 시 반드시 산소 및 유해가스 농도를 측정해야 합니다..."
+        "예: 자소서에 맨날 나오는 안전보건관리체계, 도대체 뭘까요? 핵심만 짚어드립니다."
     ),
 )
 
-if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
+if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"):
   if not safety_text:
     st.error("내용을 입력해주세요.")
   else:
     with st.spinner(
-        "AI가 글을 분석하여 쇼츠 구성과 이미지 프롬프트를 만드는 중..."
+        "AI가 쇼츠 하단 자막에 맞게 짧고 임팩트 있는 구성으로 나누는 중..."
     ):
+      # 자막을 쇼츠 하단에 들어가기 좋게 아주 짧게(1문장 내외) 작성하도록 프롬프트 지시 강화
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
+            조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(20자 이내 권장)로 작성해주세요.
             반드시 아래 JSON 리스트 형식으로만 답변해주세요 (다른 설명 없이 ```json 과 ``` 사이에 넣어주세요):
             [
-              {{"cut_number": 1, "narration": "자막 또는 나레이션 텍스트", "image_prompt": "English image prompt for vertical 9:16 illustration style, high quality"}},
+              {{"cut_number": 1, "narration": "짧은 자막 텍스트", "image_prompt": "English image prompt for vertical 9:16 illustration style, high quality, no text"}},
               ...
             ]
             
@@ -100,12 +101,11 @@ if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
 if st.session_state.cuts:
   st.markdown("---")
   st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 일괄 생성")
-  
-  # ✨ 모든 컷 이미지 한 번에 생성하는 일괄 버튼 추가
-  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (일괄 실행)", type="primary"):
+
+  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (자막 자동 합성)", type="primary"):
     progress_bar = st.progress(0)
     total_cuts = len(st.session_state.cuts)
-    
+
     for idx, cut in enumerate(st.session_state.cuts):
       try:
         user_prompt = cut["image_prompt"]
@@ -129,7 +129,32 @@ if st.session_state.cuts:
         for attempt in range(3):
           img_res = requests.get(img_url, headers=headers, timeout=60)
           if img_res.status_code == 200:
-            image = Image.open(BytesIO(img_res.content))
+            # 1. 이미지 불러오기 및 9:16 비율 고정
+            image = Image.open(BytesIO(img_res.content)).convert("RGB")
+            image = image.resize((720, 1280))
+
+            # 2. 이미지 하단에 자막바 및 자막 텍스트 합성
+            draw = ImageDraw.Draw(image)
+            
+            # 하단 어두운 자막 배경 바 박스 그리기 (X: 40 ~ 680, Y: 1040 ~ 1220)
+            draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
+            
+            # 테두리 포인트 효과
+            draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
+
+            # 자막 텍스트 삽입
+            try:
+              font = ImageFont.truetype("malgun.ttf", 36) # 윈도우 환경 기본 폰트 시도
+            except:
+              try:
+                font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
+              except:
+                font = ImageFont.load_default()
+
+            narration_text = cut["narration"]
+            # 텍스트가 박스 안에 이쁘게 들어가도록 중앙 정렬 느낌으로 배치
+            draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
+
             os.makedirs("temp_images", exist_ok=True)
             img_path = f"temp_images/cut_{idx+1}.png"
             image.save(img_path)
@@ -138,19 +163,17 @@ if st.session_state.cuts:
             break
           else:
             time.sleep(2)
-        
-        # 진행률 업데이트 및 서버 과부하 방지 딜레이
+
         progress_bar.progress((idx + 1) / total_cuts)
         time.sleep(1.5)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
-    st.success("🎉 모든 컷의 이미지가 성공적으로 일괄 생성되었습니다!")
+    st.success("🎉 모든 컷의 이미지가 자막 합성된 상태로 일괄 생성되었습니다!")
     st.rerun()
 
   st.info(
-      "원하는 컷의 텍스트나 이미지 프롬프트를 수정한 뒤 개별 생성하거나, 위의"
-      " 일괄 생성 버튼을 누를 수 있습니다."
+      "원하는 컷의 텍스트나 자막을 수정한 뒤 '개별 생성'을 누르거나, 위의 일괄 생성 버튼을 누르세요."
   )
 
   for i, cut in enumerate(st.session_state.cuts):
@@ -161,7 +184,7 @@ if st.session_state.cuts:
 
       with col_edit1:
         cut["narration"] = st.text_input(
-            f"자막/나레이션 {i+1}",
+            f"하단 자막/나레이션 {i+1}",
             cut.get("narration", ""),
             key=f"narr_{i}",
         )
@@ -171,7 +194,7 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 개별 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("AI가 이미지를 생성하는 중..."):
+          with st.spinner("AI 이미지 생성 및 자막 합성 중..."):
             try:
               user_prompt = cut["image_prompt"]
               clean_prompt = (
@@ -194,7 +217,21 @@ if st.session_state.cuts:
               for attempt in range(3):
                 img_res = requests.get(img_url, headers=headers, timeout=60)
                 if img_res.status_code == 200:
-                  image = Image.open(BytesIO(img_res.content))
+                  image = Image.open(BytesIO(img_res.content)).convert("RGB")
+                  image = image.resize((720, 1280))
+
+                  draw = ImageDraw.Draw(image)
+                  draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
+                  draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
+
+                  try:
+                    font = ImageFont.truetype("malgun.ttf", 36)
+                  except:
+                    font = ImageFont.load_default()
+
+                  narration_text = cut["narration"]
+                  draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
+
                   os.makedirs("temp_images", exist_ok=True)
                   img_path = f"temp_images/cut_{i+1}.png"
                   image.save(img_path)
@@ -205,9 +242,9 @@ if st.session_state.cuts:
                   time.sleep(2)
 
               if success:
-                st.success(f"컷 {i+1} 이미지 생성 성공!")
+                st.success(f"컷 {i+1} 이미지 생성 및 자막 합성 성공!")
               else:
-                st.error("이미지 서버 혼잡. 잠시 후 다시 시도해 주세요.")
+                st.error("이미지 서버 혼잡. 다시 시도해 주세요.")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -216,7 +253,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} AI 이미지 (9:16)",
+              caption=f"컷 {i+1} 자막 포함 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
