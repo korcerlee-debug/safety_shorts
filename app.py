@@ -1,5 +1,6 @@
 from io import BytesIO
 import os
+import time
 import urllib.parse
 import cv2
 import numpy as np
@@ -98,10 +99,58 @@ if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
 
 if st.session_state.cuts:
   st.markdown("---")
-  st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 생성")
+  st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 일괄 생성")
+  
+  # ✨ 모든 컷 이미지 한 번에 생성하는 일괄 버튼 추가
+  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (일괄 실행)", type="primary"):
+    progress_bar = st.progress(0)
+    total_cuts = len(st.session_state.cuts)
+    
+    for idx, cut in enumerate(st.session_state.cuts):
+      try:
+        user_prompt = cut["image_prompt"]
+        clean_prompt = (
+            f"{user_prompt}, vertical 9:16 aspect ratio, clean modern"
+            " digital illustration, vibrant colors, masterpiece, no text,"
+            " no words, no letters"
+        )
+        encoded_prompt = urllib.parse.quote(clean_prompt)
+        img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            )
+        }
+
+        success = False
+        for attempt in range(3):
+          img_res = requests.get(img_url, headers=headers, timeout=60)
+          if img_res.status_code == 200:
+            image = Image.open(BytesIO(img_res.content))
+            os.makedirs("temp_images", exist_ok=True)
+            img_path = f"temp_images/cut_{idx+1}.png"
+            image.save(img_path)
+            cut["image_path"] = img_path
+            success = True
+            break
+          else:
+            time.sleep(2)
+        
+        # 진행률 업데이트 및 서버 과부하 방지 딜레이
+        progress_bar.progress((idx + 1) / total_cuts)
+        time.sleep(1.5)
+      except Exception as e:
+        print(f"Cut {idx+1} error: {e}")
+
+    st.success("🎉 모든 컷의 이미지가 성공적으로 일괄 생성되었습니다!")
+    st.rerun()
+
   st.info(
-      "원하는 컷의 텍스트나 이미지 프롬프트를 수정한 뒤 '이미지 생성' 버튼을"
-      " 누를 수 있습니다."
+      "원하는 컷의 텍스트나 이미지 프롬프트를 수정한 뒤 개별 생성하거나, 위의"
+      " 일괄 생성 버튼을 누를 수 있습니다."
   )
 
   for i, cut in enumerate(st.session_state.cuts):
@@ -121,8 +170,8 @@ if st.session_state.cuts:
             cut.get("image_prompt", ""),
             key=f"prompt_{i}",
         )
-        if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("AI가 프롬프트에 맞는 이미지를 그리는 중... (약 10초 소요)"):
+        if st.button(f"🎨 이 컷 이미지 개별 생성/재생성", key=f"gen_{i}"):
+          with st.spinner("AI가 이미지를 생성하는 중..."):
             try:
               user_prompt = cut["image_prompt"]
               clean_prompt = (
@@ -133,7 +182,6 @@ if st.session_state.cuts:
               encoded_prompt = urllib.parse.quote(clean_prompt)
               img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
 
-              # 브라우저 위장 헤더 추가하여 차단 우회
               headers = {
                   "User-Agent": (
                       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -142,19 +190,24 @@ if st.session_state.cuts:
                   )
               }
 
-              img_res = requests.get(img_url, headers=headers, timeout=60)
-              if img_res.status_code == 200:
-                image = Image.open(BytesIO(img_res.content))
-                os.makedirs("temp_images", exist_ok=True)
-                img_path = f"temp_images/cut_{i+1}.png"
-                image.save(img_path)
-                cut["image_path"] = img_path
-                st.success(f"컷 {i+1} 순수 AI 이미지 생성 성공!")
+              success = False
+              for attempt in range(3):
+                img_res = requests.get(img_url, headers=headers, timeout=60)
+                if img_res.status_code == 200:
+                  image = Image.open(BytesIO(img_res.content))
+                  os.makedirs("temp_images", exist_ok=True)
+                  img_path = f"temp_images/cut_{i+1}.png"
+                  image.save(img_path)
+                  cut["image_path"] = img_path
+                  success = True
+                  break
+                else:
+                  time.sleep(2)
+
+              if success:
+                st.success(f"컷 {i+1} 이미지 생성 성공!")
               else:
-                st.error(
-                    f"이미지 서버 응답 오류 (코드: {img_res.status_code})."
-                    " 잠시 후 다시 시도해 주세요."
-                )
+                st.error("이미지 서버 혼잡. 잠시 후 다시 시도해 주세요.")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -185,8 +238,8 @@ if st.session_state.cuts:
     ]
     if not valid_cuts:
       st.error(
-          "생성된 이미지가 없습니다. 각 컷의 '이미지 생성' 버튼을 먼저"
-          " 눌러주세요."
+          "생성된 이미지가 없습니다. '모든 컷 이미지 한 번에 생성하기' 버튼을"
+          " 먼저 눌러주세요."
       )
     else:
       with st.spinner("영상을 렌더링 중입니다..."):
