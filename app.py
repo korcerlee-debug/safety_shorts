@@ -1,9 +1,11 @@
 from io import BytesIO
 import os
+import urllib.parse
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
 from google import genai
+import requests
 import streamlit as st
 
 st.set_page_config(page_title="안전 쇼츠 자동 제작기", layout="wide")
@@ -120,61 +122,29 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("AI 이미지 생성 모델 호출 중..."):
+          with st.spinner("프롬프트에 맞는 순수 일러스트 이미지를 생성하는 중..."):
             try:
-              # 무료 API 환경에서 이미지 생성 요청 전송 및 렌더링 우회 처리
-              prompt_text = cut["image_prompt"]
-              
-              # 9:16 세로형 쇼츠 규격 (720 x 1280)
-              img_width, img_height = 720, 1280
-              
-              # 프롬프트의 의미와 분위기에 맞는 일러스트 스타일 고유 색상 추출
-              import hashlib
-              h = int(hashlib.md5(prompt_text.encode()).hexdigest(), 16)
-              bg_r = 20 + (h % 35)
-              bg_g = 30 + ((h // 7) % 40)
-              bg_b = 50 + ((h // 49) % 60)
+              # 텍스트가 절대 들어가지 않도록 프롬프트 제어 강화
+              user_prompt = cut["image_prompt"]
+              clean_prompt = (
+                  f"{user_prompt}, vertical 9:16 aspect ratio, clean modern"
+                  " digital illustration, vibrant colors, no text, no words,"
+                  " no letters"
+              )
+              encoded_prompt = urllib.parse.quote(clean_prompt)
+              img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
 
-              img = Image.new("RGB", (img_width, img_height), color=(bg_r, bg_g, bg_b))
-              draw = ImageDraw.Draw(img)
-
-              # 모던 벡터 일러스트풍의 화면 프레임 및 레이아웃 구성
-              draw.rounded_rectangle([40, 40, img_width - 40, img_height - 40], radius=20, fill=(245, 247, 250), outline=(200, 210, 225), width=4)
-              
-              # 상단 일러스트 타이틀 영역
-              draw.rounded_rectangle([70, 80, img_width - 70, 150], radius=10, fill=(40, 50, 70))
-              
-              try:
-                font_default = ImageFont.load_default()
-              except:
-                font_default = None
-
-              draw.text((100, 105), f"AI GENERATED SCENE : CUT {i+1}", fill=(255, 255, 255), font=font_default)
-
-              # 중앙 실제 일러스트 콘셉트 표현 영역 (프롬프트 반영 시각 요소)
-              draw.rounded_rectangle([70, 180, img_width - 70, 950], radius=15, fill=(255, 255, 255), outline=(220, 225, 235), width=2)
-              
-              # 프롬프트 내용 분석 및 시각적 일러스트 가이드 텍스트 배치
-              draw.text((100, 220), "[ Applied Image Prompt ]", fill=(200, 80, 50), font=font_default)
-              
-              y_offset = 260
-              for c_idx in range(0, min(len(prompt_text), 350), 38):
-                chunk = prompt_text[c_idx:c_idx+38]
-                draw.text((100, y_offset), chunk, fill=(35, 40, 50), font=font_default)
-                y_offset += 30
-
-              # 하단 자막(나레이션) 영역
-              draw.rounded_rectangle([70, 1000, img_width - 70, img_height - 70], radius=15, fill=(235, 240, 250))
-              draw.text((100, 1030), "[ Subtitle / Narration ]", fill=(30, 100, 200), font=font_default)
-              
-              narration_text = cut["narration"]
-              draw.text((100, 1070), narration_text[:85] + ("..." if len(narration_text) > 85 else ""), fill=(20, 20, 20), font=font_default)
-
-              os.makedirs("temp_images", exist_ok=True)
-              img_path = f"temp_images/cut_{i+1}.png"
-              img.save(img_path)
-              cut["image_path"] = img_path
-              st.success(f"컷 {i+1} 이미지 생성 완료!")
+              # 이미지 다운로드 및 저장
+              img_res = requests.get(img_url, timeout=45)
+              if img_res.status_code == 200:
+                image = Image.open(BytesIO(img_res.content))
+                os.makedirs("temp_images", exist_ok=True)
+                img_path = f"temp_images/cut_{i+1}.png"
+                image.save(img_path)
+                cut["image_path"] = img_path
+                st.success(f"컷 {i+1} 순수 AI 이미지 생성 완료!")
+              else:
+                st.error("이미지 서버 응답 실패. 다시 시도해 주세요.")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -183,7 +153,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} 미리보기 (9:16)",
+              caption=f"컷 {i+1} AI 이미지 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
