@@ -57,9 +57,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
   if not safety_text:
     st.error("내용을 입력해주세요.")
   else:
-    with st.spinner(
-        "AI가 쇼츠 하단 자막에 맞게 짧고 임팩트 있는 구성으로 나누는 중... (잠시만 기다려주세요)"
-    ):
+    with st.spinner("AI가 쇼츠 시나리오를 구성하는 중..."):
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
             조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(15자 이내 권장)로 작성해주세요.
@@ -75,19 +73,21 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
       
       response = None
       success = False
+      # 안정적인 표준 모델로 변경 및 타임아웃/예외처리 강화
       for attempt in range(3):
         try:
           response = client.models.generate_content(
-              model="gemini-3.8-flash",
+              model="gemini-2.5-flash",
               contents=prompt,
           )
-          success = True
-          break
+          if response and response.text:
+            success = True
+            break
         except Exception as e:
-          time.sleep(3)
+          time.sleep(2)
 
       if not success:
-        st.error("서버가 혼잡하여 시나리오 생성에 실패했습니다. 잠시 후 다시 버튼을 눌러주세요.")
+        st.error("서버 응답이 지연되고 있습니다. 잠시 후 다시 버튼을 눌러주세요.")
       else:
         try:
           import json
@@ -136,7 +136,6 @@ if st.session_state.cuts:
         }
 
         cut_success = False
-        # 일괄 생성 시 각 컷마다 최대 4번 재시도 기회 부여
         for attempt in range(4):
           try:
             img_res = requests.get(img_url, headers=headers, timeout=60)
@@ -144,7 +143,7 @@ if st.session_state.cuts:
               image = Image.open(BytesIO(img_res.content)).convert("RGB")
               image = image.resize((720, 1280))
 
-              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 880 ~ 1030, 6번째 맨 아랫칸은 비워둠)
+              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 870 ~ 1040, 6번째 맨 아랫칸은 비워둠)
               draw = ImageDraw.Draw(image)
               draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
               draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
@@ -158,7 +157,7 @@ if st.session_state.cuts:
               ]
               for fp in font_paths:
                 try:
-                  font = ImageFont.truetype(fp, 44)  # 폰트 크기를 키워서 가독성 확보
+                  font = ImageFont.truetype(fp, 44)
                   break
                 except:
                   continue
@@ -180,13 +179,12 @@ if st.session_state.cuts:
             time.sleep(3)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        # 서버 과부하 및 402 에러 방지를 위해 컷마다 5초간 충분한 여유 대기 시간 부여
         time.sleep(5.0)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
     status_text.empty()
-    st.success("🎉 모든 컷의 일러스트 이미지와 큼직한 하단 자막 합성이 완료되었습니다!")
+    st.success("🎉 모든 컷의 일러스트 이미지와 자막 합성이 완료되었습니다!")
     st.rerun()
 
   st.info(
