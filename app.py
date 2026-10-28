@@ -1,11 +1,12 @@
 from io import BytesIO
+import json
 import os
+import re
 import time
 import urllib.parse
 import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from google import genai
 import requests
 import streamlit as st
 
@@ -38,8 +39,6 @@ if not api_key:
   st.info("위의 링크 버튼을 눌러 무료로 API 키를 발급받으실 수 있습니다.")
   st.stop()
 
-client = genai.Client(api_key=api_key)
-
 # 세션 상태 초기화
 if "cuts" not in st.session_state:
   st.session_state.cuts = []
@@ -57,8 +56,8 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
   if not safety_text:
     st.error("내용을 입력해주세요.")
   else:
-    with st.spinner("AI가 쇼츠 시나리오를 구성하는 중... (잠시만 기다려주세요)"):
-      prompt = f"""
+    with st.spinner("AI가 쇼츠 시나리오를 빠르게 구성하는 중..."):
+      prompt_text = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
             조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(15자 이내 권장)로 작성해주세요.
             반드시 아래 JSON 리스트 형식으로만 답변해주세요 (다른 설명 없이 ```json 과 ``` 사이에 넣어주세요):
@@ -70,41 +69,53 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
             입력된 글:
             {safety_text}
             """
-      
-      response = None
-      success = False
-      # 안정적인 표준 모델 사용 및 재시도 횟수 확대
-      for attempt in range(5):
-        try:
-          response = client.models.generate_content(
-              model="gemini-2.5-flash",
-              contents=prompt,
-          )
-          if response and response.text:
-            success = True
-            break
-        except Exception as e:
-          time.sleep(3)
 
-      if not success:
-        st.error("서버 응답이 지연되고 있습니다. 잠시 후 다시 버튼을 눌러주세요.")
+      # 지연 현상을 원천 차단하기 위해 HTTP 직접 호출 방식 사용
+      gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+      headers = {"Content-Type": "application/json"}
+      payload = {"contents": [{"parts": [{"text": prompt_text}]}]}
+
+      response_text = None
+      success = False
+
+      for attempt in range(3):
+        try:
+          res = requests.post(
+              gemini_url, headers=headers, json=payload, timeout=30
+          )
+          if res.status_code == 200:
+            res_json = res.json()
+            response_text = (
+                res_json.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
+            if response_text:
+              success = True
+              break
+          else:
+            time.sleep(2)
+        except Exception:
+          time.sleep(2)
+
+      if not success or not response_text:
+        st.error(
+            "서버 응답이 지연되었습니다. 잠시 후 버튼을 다시 눌러주세요."
+        )
       else:
         try:
-          import json
-          import re
-
-          text_content = response.text
-          match = re.search(r"```json\s*(.*?)\s*```", text_content, re.DOTALL)
+          match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
           if match:
             json_str = match.group(1)
             st.session_state.cuts = json.loads(json_str)
             st.success("시나리오 생성 완료!")
           else:
-            st.session_state.cuts = json.loads(text_content)
+            st.session_state.cuts = json.loads(response_text)
             st.success("시나리오 생성 완료!")
         except Exception as e:
           st.error(f"데이터 파싱 오류 발생: {e}")
-          st.write("AI 응답 원본:", response.text if response else "응답 없음")
+          st.write("AI 응답 원본:", response_text)
 
 if st.session_state.cuts:
   st.markdown("---")
@@ -127,7 +138,7 @@ if st.session_state.cuts:
         encoded_prompt = urllib.parse.quote(clean_prompt)
         img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
 
-        headers = {
+        img_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -136,25 +147,31 @@ if st.session_state.cuts:
         }
 
         cut_success = False
-        # 일괄 생성 시 각 컷마다 충분한 재시도 기회 부여
-        for attempt in range(5):
+        for attempt in range(4):
           try:
-            img_res = requests.get(img_url, headers=headers, timeout=60)
+            img_res = requests.get(img_url, headers=img_headers, timeout=60)
             if img_res.status_code == 200:
               image = Image.open(BytesIO(img_res.content)).convert("RGB")
               image = image.resize((720, 1280))
 
-              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 870 ~ 1040, 6번째 맨 아랫칸은 비워둠, 폰트 크기 44)
+              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 870 ~ 1040, 6번째 맨 아랫칸은 비워둠)
               draw = ImageDraw.Draw(image)
-              draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
-              draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
+              draw.rounded_rectangle(
+                  [40, 870, 680, 1040], radius=16, fill=(15, 15, 20)
+              )
+              draw.rounded_rectangle(
+                  [40, 870, 680, 1040],
+                  radius=16,
+                  outline=(60, 130, 246),
+                  width=4,
+              )
 
               font = None
               font_paths = [
                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                   "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                   "malgun.ttf",
-                  "DejaVuSans-Bold.ttf"
+                  "DejaVuSans-Bold.ttf",
               ]
               for fp in font_paths:
                 try:
@@ -166,7 +183,9 @@ if st.session_state.cuts:
                 font = ImageFont.load_default()
 
               narration_text = cut["narration"]
-              draw.text((70, 925), narration_text, fill=(255, 255, 255), font=font)
+              draw.text(
+                  (70, 925), narration_text, fill=(255, 255, 255), font=font
+              )
 
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{idx+1}.png"
@@ -180,8 +199,7 @@ if st.session_state.cuts:
             time.sleep(3)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        # 일괄 생성 시 서버 차단(402)을 막기 위해 컷마다 6초간 충분히 대기
-        time.sleep(6.0)
+        time.sleep(5.0)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
@@ -231,22 +249,29 @@ if st.session_state.cuts:
               }
 
               success = False
-              for attempt in range(5):
+              for attempt in range(4):
                 img_res = requests.get(img_url, headers=headers, timeout=60)
                 if img_res.status_code == 200:
                   image = Image.open(BytesIO(img_res.content)).convert("RGB")
                   image = image.resize((720, 1280))
 
                   draw = ImageDraw.Draw(image)
-                  draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
-                  draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
+                  draw.rounded_rectangle(
+                      [40, 870, 680, 1040], radius=16, fill=(15, 15, 20)
+                  )
+                  draw.rounded_rectangle(
+                      [40, 870, 680, 1040],
+                      radius=16,
+                      outline=(60, 130, 246),
+                      width=4,
+                  )
 
                   font = None
                   font_paths = [
                       "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
                       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                       "malgun.ttf",
-                      "DejaVuSans-Bold.ttf"
+                      "DejaVuSans-Bold.ttf",
                   ]
                   for fp in font_paths:
                     try:
@@ -258,7 +283,12 @@ if st.session_state.cuts:
                     font = ImageFont.load_default()
 
                   narration_text = cut["narration"]
-                  draw.text((70, 925), narration_text, fill=(255, 255, 255), font=font)
+                  draw.text(
+                      (70, 925),
+                      narration_text,
+                      fill=(255, 255, 255),
+                      font=font,
+                  )
 
                   os.makedirs("temp_images", exist_ok=True)
                   img_path = f"temp_images/cut_{i+1}.png"
@@ -272,7 +302,9 @@ if st.session_state.cuts:
               if success:
                 st.success(f"컷 {i+1} 일러스트 이미지 생성 및 자막 합성 성공!")
               else:
-                st.error("이미지 서버 혼잡. 3초 뒤 개별 생성 버튼을 다시 눌러주세요.")
+                st.error(
+                    "이미지 서버 혼잡. 3초 뒤 개별 생성 버튼을 다시 눌러주세요."
+                )
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
