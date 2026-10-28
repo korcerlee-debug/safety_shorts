@@ -2,7 +2,7 @@ from io import BytesIO
 import os
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 from google import genai
 import streamlit as st
 
@@ -59,14 +59,14 @@ if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
         "AI가 안전 글을 분석하여 쇼츠 구성과 이미지 프롬프트를 만드는 중..."
     ):
       prompt = f"""
-            다음 안전 관련 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
+            다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
             반드시 아래 JSON 리스트 형식으로만 답변해주세요 (다른 설명 없이 ```json 과 ``` 사이에 넣어주세요):
             [
-              {{"cut_number": 1, "narration": "자막 또는 나레이션 텍스트", "image_prompt": "English image prompt for vertical 9:16 safety illustration"}},
+              {{"cut_number": 1, "narration": "자막 또는 나레이션 텍스트", "image_prompt": "English image prompt for vertical 9:16 illustration"}},
               ...
             ]
             
-            안전 관련 글:
+            입력된 글:
             {safety_text}
             """
       try:
@@ -120,41 +120,71 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("안전 교육 일러스트 이미지 생성 중..."):
+          with st.spinner("쇼츠 비율(9:16) 맞춤 이미지 렌더링 중..."):
             try:
-              # 일반 API 키에서 호환되는 방식으로 이미지 생성 요청 우회 및 처리
-              img_prompt = (
-                  f"Create a clean vertical 9:16 safety training illustration"
-                  f" about: {cut['image_prompt']}"
+              # 쇼츠 전용 9:16 비율 해상도 설정 (너비 720, 높이 1280)
+              img_width, img_height = 720, 1280
+              img = Image.new(
+                  "RGB", (img_width, img_height), color=(245, 247, 250)
               )
-              img_res = client.models.generate_content(
-                  model="gemini-3.8-flash",
-                  contents=[
-                      (
-                          "Generate an image based on this description or create"
-                          " a descriptive placeholder visual art concept:"
-                      ),
-                      img_prompt,
-                  ],
-              )
-
-              # 임시로 깔끔한 고화질 교육용 플레이스홀더 캔버스 이미지 생성 (API 한계 우회용 안정적 처리)
-              # 실제 일러스트 느낌의 색상 배경 이미지 생성
-              img = Image.new("RGB", (720, 1280), color=(240, 244, 248))
-              import PIL.ImageDraw as ImageDraw
-              import PIL.ImageFont as ImageFont
-
               draw = ImageDraw.Draw(img)
-              # 텍스트 박스 및 안내 문구 삽입
-              draw.rectangle([40, 400, 680, 880], fill=(255, 255, 255), outline=(200, 205, 215), width=3)
-              
-              # 줄바꿈 처리하여 텍스트 그리기
-              text_to_draw = cut["image_prompt"]
+
+              # 상단 타이틀 박스 및 본문 내용 시각화 디자인
+              draw.rectangle(
+                  [50, 150, img_width - 50, 450],
+                  fill=(255, 255, 255),
+                  outline=(210, 215, 225),
+                  width=3,
+              )
+              draw.rectangle(
+                  [50, 520, img_width - 50, img_height - 150],
+                  fill=(255, 255, 255),
+                  outline=(210, 215, 225),
+                  width=3,
+              )
+
+              # 텍스트 시각화 (프롬프트 및 컷 번호 삽입)
+              from PIL import ImageFont
+
+              try:
+                # 기본 폰트 로드 시도
+                font_title = ImageFont.load_default()
+              except:
+                font_title = None
+
+              draw.text(
+                  (80, 180),
+                  f"[ CUT {i+1} SCENE ]",
+                  fill=(200, 50, 50),
+                  font=font_title,
+              )
+              draw.text(
+                  (80, 550),
+                  "Visual Prompt:",
+                  fill=(100, 100, 100),
+                  font=font_title,
+              )
+
+              # 긴 프롬프트 문구를 보기 좋게 잘라서 렌더링
+              prompt_text = cut["image_prompt"]
+              y_offset = 590
+              for line_chunk in [
+                  prompt_text[j : j + 35]
+                  for j in range(0, min(len(prompt_text), 250), 35]
+              ]:
+                draw.text(
+                    (80, y_offset),
+                    line_chunk,
+                    fill=(30, 30, 30),
+                    font=font_title,
+                )
+                y_offset += 30
+
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{i+1}.png"
               img.save(img_path)
               cut["image_path"] = img_path
-              st.success(f"컷 {i+1} 이미지 생성 성공!")
+              st.success(f"컷 {i+1} 쇼츠 비율(9:16) 이미지 생성 성공!")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -162,8 +192,8 @@ if st.session_state.cuts:
         if "image_path" in cut and os.path.exists(cut["image_path"]):
           st.image(
               cut["image_path"],
-              width=180,
-              caption=f"컷 {i+1} 미리보기",
+              width=220,
+              caption=f"컷 {i+1} 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
