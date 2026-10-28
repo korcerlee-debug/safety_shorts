@@ -62,7 +62,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
     ):
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
-            조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(20자 이내 권장)로 작성해주세요.
+            조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(15자 이내 권장)로 작성해주세요.
             반드시 아래 JSON 리스트 형식으로만 답변해주세요 (다른 설명 없이 ```json 과 ``` 사이에 넣어주세요):
             [
               {{"cut_number": 1, "narration": "짧은 자막 텍스트", "image_prompt": "English image prompt for vertical 9:16 simple flat vector illustration, minimalist cartoon style, clean background, no text"}},
@@ -110,7 +110,7 @@ if st.session_state.cuts:
   st.markdown("---")
   st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 일괄 생성")
 
-  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (일괄 실행)", type="primary"):
+  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (서버 안정화 적용)", type="primary"):
     progress_bar = st.progress(0)
     status_text = st.empty()
     total_cuts = len(st.session_state.cuts)
@@ -136,19 +136,19 @@ if st.session_state.cuts:
         }
 
         cut_success = False
-        for attempt in range(3):
+        # 일괄 생성 시 각 컷마다 최대 4번 재시도 기회 부여
+        for attempt in range(4):
           try:
-            img_res = requests.get(img_url, headers=headers, timeout=50)
+            img_res = requests.get(img_url, headers=headers, timeout=60)
             if img_res.status_code == 200:
               image = Image.open(BytesIO(img_res.content)).convert("RGB")
               image = image.resize((720, 1280))
 
-              # 하단 자막 바 및 텍스트 합성
+              # 자막 합성 (6등분 기준 5번째 칸 위치: Y 880 ~ 1030, 6번째 맨 아랫칸은 비워둠)
               draw = ImageDraw.Draw(image)
-              draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
-              draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
+              draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
+              draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
 
-              # 리눅스/윈도우 공통 폰트 로드 안전 장치
               font = None
               font_paths = [
                   "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -158,7 +158,7 @@ if st.session_state.cuts:
               ]
               for fp in font_paths:
                 try:
-                  font = ImageFont.truetype(fp, 32)
+                  font = ImageFont.truetype(fp, 44)  # 폰트 크기를 키워서 가독성 확보
                   break
                 except:
                   continue
@@ -166,7 +166,7 @@ if st.session_state.cuts:
                 font = ImageFont.load_default()
 
               narration_text = cut["narration"]
-              draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
+              draw.text((70, 925), narration_text, fill=(255, 255, 255), font=font)
 
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{idx+1}.png"
@@ -174,17 +174,19 @@ if st.session_state.cuts:
               cut["image_path"] = img_path
               cut_success = True
               break
+            else:
+              time.sleep(3)
           except Exception:
-            time.sleep(2)
-          time.sleep(1)
+            time.sleep(3)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        time.sleep(2.5) # 서버 부하 방지 대기 시간
+        # 서버 과부하 및 402 에러 방지를 위해 컷마다 5초간 충분한 여유 대기 시간 부여
+        time.sleep(5.0)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
     status_text.empty()
-    st.success("🎉 모든 컷의 일러스트 이미지와 자막 합성이 완료되었습니다!")
+    st.success("🎉 모든 컷의 일러스트 이미지와 큼직한 하단 자막 합성이 완료되었습니다!")
     st.rerun()
 
   st.info(
@@ -229,15 +231,15 @@ if st.session_state.cuts:
               }
 
               success = False
-              for attempt in range(3):
+              for attempt in range(4):
                 img_res = requests.get(img_url, headers=headers, timeout=60)
                 if img_res.status_code == 200:
                   image = Image.open(BytesIO(img_res.content)).convert("RGB")
                   image = image.resize((720, 1280))
 
                   draw = ImageDraw.Draw(image)
-                  draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
-                  draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
+                  draw.rounded_rectangle([40, 870, 680, 1040], radius=16, fill=(15, 15, 20))
+                  draw.rounded_rectangle([40, 870, 680, 1040], radius=16, outline=(60, 130, 246), width=4)
 
                   font = None
                   font_paths = [
@@ -248,7 +250,7 @@ if st.session_state.cuts:
                   ]
                   for fp in font_paths:
                     try:
-                      font = ImageFont.truetype(fp, 32)
+                      font = ImageFont.truetype(fp, 44)
                       break
                     except:
                       continue
@@ -256,7 +258,7 @@ if st.session_state.cuts:
                     font = ImageFont.load_default()
 
                   narration_text = cut["narration"]
-                  draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
+                  draw.text((70, 925), narration_text, fill=(255, 255, 255), font=font)
 
                   os.makedirs("temp_images", exist_ok=True)
                   img_path = f"temp_images/cut_{i+1}.png"
@@ -265,12 +267,12 @@ if st.session_state.cuts:
                   success = True
                   break
                 else:
-                  time.sleep(2)
+                  time.sleep(3)
 
               if success:
                 st.success(f"컷 {i+1} 일러스트 이미지 생성 및 자막 합성 성공!")
               else:
-                st.error("이미지 서버 혼잡. 잠시 후 다시 시도해 주세요.")
+                st.error("이미지 서버 혼잡. 3초 뒤 개별 생성 버튼을 다시 눌러주세요.")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
