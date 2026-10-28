@@ -58,9 +58,8 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
     st.error("내용을 입력해주세요.")
   else:
     with st.spinner(
-        "AI가 쇼츠 하단 자막에 맞게 짧고 임팩트 있는 구성으로 나누는 중..."
+        "AI가 쇼츠 하단 자막에 맞게 짧고 임팩트 있는 구성으로 나누는 중... (잠시만 기다려주세요)"
     ):
-      # 자막을 쇼츠 하단에 들어가기 좋게 아주 짧게(1문장 내외) 작성하도록 프롬프트 지시 강화
       prompt = f"""
             다음 글을 바탕으로 쇼츠/릴스 영상용 6~8컷의 스토리보드를 만들어주세요.
             조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(20자 이내 권장)로 작성해주세요.
@@ -73,30 +72,40 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
             입력된 글:
             {safety_text}
             """
-      try:
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=prompt,
-        )
+      
+      # 서버 혼잡(503 등) 발생 시 자동 재시도 로직 추가
+      response = None
+      success = False
+      for attempt in range(3):
+        try:
+          response = client.models.generate_content(
+              model="gemini-3.8-flash",
+              contents=prompt,
+          )
+          success = True
+          break
+        except Exception as e:
+          time.sleep(3) # 3초 대기 후 재시도
 
-        import json
-        import re
+      if not success:
+        st.error("서버가 혼잡하여 시나리오 생성에 실패했습니다. 잠시 후 다시 버튼을 눌러주세요.")
+      else:
+        try:
+          import json
+          import re
 
-        text_content = response.text
-        match = re.search(r"```json\s*(.*?)\s*```", text_content, re.DOTALL)
-        if match:
-          json_str = match.group(1)
-          st.session_state.cuts = json.loads(json_str)
-          st.success("시나리오 생성 완료!")
-        else:
-          st.session_state.cuts = json.loads(text_content)
-          st.success("시나리오 생성 완료!")
-      except Exception as e:
-        st.error(f"오류 발생: {e}")
-        st.write(
-            "AI 응답 원본:",
-            response.text if "response" in locals() else "응답 없음",
-        )
+          text_content = response.text
+          match = re.search(r"```json\s*(.*?)\s*```", text_content, re.DOTALL)
+          if match:
+            json_str = match.group(1)
+            st.session_state.cuts = json.loads(json_str)
+            st.success("시나리오 생성 완료!")
+          else:
+            st.session_state.cuts = json.loads(text_content)
+            st.success("시나리오 생성 완료!")
+        except Exception as e:
+          st.error(f"데이터 파싱 오류 발생: {e}")
+          st.write("AI 응답 원본:", response.text if response else "응답 없음")
 
 if st.session_state.cuts:
   st.markdown("---")
@@ -129,22 +138,15 @@ if st.session_state.cuts:
         for attempt in range(3):
           img_res = requests.get(img_url, headers=headers, timeout=60)
           if img_res.status_code == 200:
-            # 1. 이미지 불러오기 및 9:16 비율 고정
             image = Image.open(BytesIO(img_res.content)).convert("RGB")
             image = image.resize((720, 1280))
 
-            # 2. 이미지 하단에 자막바 및 자막 텍스트 합성
             draw = ImageDraw.Draw(image)
-            
-            # 하단 어두운 자막 배경 바 박스 그리기 (X: 40 ~ 680, Y: 1040 ~ 1220)
             draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
-            
-            # 테두리 포인트 효과
             draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
 
-            # 자막 텍스트 삽입
             try:
-              font = ImageFont.truetype("malgun.ttf", 36) # 윈도우 환경 기본 폰트 시도
+              font = ImageFont.truetype("malgun.ttf", 36)
             except:
               try:
                 font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
@@ -152,7 +154,6 @@ if st.session_state.cuts:
                 font = ImageFont.load_default()
 
             narration_text = cut["narration"]
-            # 텍스트가 박스 안에 이쁘게 들어가도록 중앙 정렬 느낌으로 배치
             draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
 
             os.makedirs("temp_images", exist_ok=True)
@@ -244,7 +245,7 @@ if st.session_state.cuts:
               if success:
                 st.success(f"컷 {i+1} 이미지 생성 및 자막 합성 성공!")
               else:
-                st.error("이미지 서버 혼잡. 다시 시도해 주세요.")
+                st.error("이미지 서버 혼잡. 잠시 후 다시 시도해 주세요.")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
