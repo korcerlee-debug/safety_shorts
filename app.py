@@ -65,7 +65,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
             조건: 각 컷의 'narration'은 쇼츠 하단 자막으로 쓰기 좋게 1문장의 아주 짧고 임팩트 있는 핵심 문구(20자 이내 권장)로 작성해주세요.
             반드시 아래 JSON 리스트 형식으로만 답변해주세요 (다른 설명 없이 ```json 과 ``` 사이에 넣어주세요):
             [
-              {{"cut_number": 1, "narration": "짧은 자막 텍스트", "image_prompt": "English image prompt for vertical 9:16 illustration style, high quality, no text"}},
+              {{"cut_number": 1, "narration": "짧은 자막 텍스트", "image_prompt": "English image prompt for vertical 9:16 simple flat vector illustration, minimalist cartoon style, clean background, no text"}},
               ...
             ]
             
@@ -73,7 +73,6 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
             {safety_text}
             """
       
-      # 서버 혼잡(503 등) 발생 시 자동 재시도 로직 추가
       response = None
       success = False
       for attempt in range(3):
@@ -85,7 +84,7 @@ if st.button("🎬 6~8컷 쇼츠 시나리오 및 이미지 프롬프트 생성"
           success = True
           break
         except Exception as e:
-          time.sleep(3) # 3초 대기 후 재시도
+          time.sleep(3)
 
       if not success:
         st.error("서버가 혼잡하여 시나리오 생성에 실패했습니다. 잠시 후 다시 버튼을 눌러주세요.")
@@ -111,17 +110,20 @@ if st.session_state.cuts:
   st.markdown("---")
   st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 일괄 생성")
 
-  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (자막 자동 합성)", type="primary"):
+  if st.button("✨ 모든 컷 이미지 한 번에 생성하기 (일괄 실행)", type="primary"):
     progress_bar = st.progress(0)
+    status_text = st.empty()
     total_cuts = len(st.session_state.cuts)
 
     for idx, cut in enumerate(st.session_state.cuts):
+      status_text.text(f"진행 중: 총 {total_cuts}컷 중 {idx+1}번째 컷 생성 중...")
       try:
         user_prompt = cut["image_prompt"]
+        # 실사 느낌을 배제하고 단순한 플랫 벡터 일러스트 스타일로 엄격하게 고정
         clean_prompt = (
-            f"{user_prompt}, vertical 9:16 aspect ratio, clean modern"
-            " digital illustration, vibrant colors, masterpiece, no text,"
-            " no words, no letters"
+            f"{user_prompt}, vertical 9:16 aspect ratio, simple flat vector"
+            " illustration, minimalist cartoon style, clean vector art,"
+            " vibrant colors, no photorealistic, no text, no words, no letters"
         )
         encoded_prompt = urllib.parse.quote(clean_prompt)
         img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
@@ -134,43 +136,47 @@ if st.session_state.cuts:
             )
         }
 
-        success = False
+        cut_success = False
         for attempt in range(3):
-          img_res = requests.get(img_url, headers=headers, timeout=60)
-          if img_res.status_code == 200:
-            image = Image.open(BytesIO(img_res.content)).convert("RGB")
-            image = image.resize((720, 1280))
+          try:
+            img_res = requests.get(img_url, headers=headers, timeout=45)
+            if img_res.status_code == 200:
+              image = Image.open(BytesIO(img_res.content)).convert("RGB")
+              image = image.resize((720, 1280))
 
-            draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
-            draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
+              draw = ImageDraw.Draw(image)
+              draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, fill=(15, 15, 20))
+              draw.rounded_rectangle([40, 1040, 680, 1220], radius=16, outline=(60, 130, 246), width=3)
 
-            try:
-              font = ImageFont.truetype("malgun.ttf", 36)
-            except:
               try:
-                font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
+                font = ImageFont.truetype("malgun.ttf", 36)
               except:
-                font = ImageFont.load_default()
+                try:
+                  font = ImageFont.truetype("DejaVuSans-Bold.ttf", 36)
+                except:
+                  font = ImageFont.load_default()
 
-            narration_text = cut["narration"]
-            draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
+              narration_text = cut["narration"]
+              draw.text((70, 1100), narration_text, fill=(255, 255, 255), font=font)
 
-            os.makedirs("temp_images", exist_ok=True)
-            img_path = f"temp_images/cut_{idx+1}.png"
-            image.save(img_path)
-            cut["image_path"] = img_path
-            success = True
-            break
-          else:
+              os.makedirs("temp_images", exist_ok=True)
+              img_path = f"temp_images/cut_{idx+1}.png"
+              image.save(img_path)
+              cut["image_path"] = img_path
+              cut_success = True
+              break
+          except Exception:
             time.sleep(2)
+          time.sleep(1)
 
         progress_bar.progress((idx + 1) / total_cuts)
-        time.sleep(1.5)
+        # 서버 과부하를 막기 위해 컷마다 3초씩 안전 여유 시간 부여
+        time.sleep(3.0)
       except Exception as e:
         print(f"Cut {idx+1} error: {e}")
 
-    st.success("🎉 모든 컷의 이미지가 자막 합성된 상태로 일괄 생성되었습니다!")
+    status_text.empty()
+    st.success("🎉 모든 컷의 일러스트 이미지와 자막 합성이 완료되었습니다!")
     st.rerun()
 
   st.info(
@@ -195,13 +201,13 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 개별 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("AI 이미지 생성 및 자막 합성 중..."):
+          with st.spinner("단순 일러스트 스타일로 이미지 생성 및 자막 합성 중..."):
             try:
               user_prompt = cut["image_prompt"]
               clean_prompt = (
-                  f"{user_prompt}, vertical 9:16 aspect ratio, clean modern"
-                  " digital illustration, vibrant colors, masterpiece, no text,"
-                  " no words, no letters"
+                  f"{user_prompt}, vertical 9:16 aspect ratio, simple flat vector"
+                  " illustration, minimalist cartoon style, clean vector art,"
+                  " vibrant colors, no photorealistic, no text, no words, no letters"
               )
               encoded_prompt = urllib.parse.quote(clean_prompt)
               img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
@@ -243,7 +249,7 @@ if st.session_state.cuts:
                   time.sleep(2)
 
               if success:
-                st.success(f"컷 {i+1} 이미지 생성 및 자막 합성 성공!")
+                st.success(f"컷 {i+1} 일러스트 이미지 생성 및 자막 합성 성공!")
               else:
                 st.error("이미지 서버 혼잡. 잠시 후 다시 시도해 주세요.")
             except Exception as e:
@@ -254,7 +260,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} 자막 포함 미리보기 (9:16)",
+              caption=f"컷 {i+1} 일러스트 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
