@@ -2,7 +2,7 @@ from io import BytesIO
 import os
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from google import genai
 import streamlit as st
 
@@ -99,7 +99,7 @@ if st.session_state.cuts:
   st.header("2. 컷 별 자막 및 이미지 프롬프트 수정 & 생성")
   st.info(
       "원하는 컷의 텍스트나 이미지 프롬프트를 수정한 뒤 '이미지 생성' 버튼을"
-      " 누를 수 있습니다."
+      " 누할 수 있습니다."
   )
 
   for i, cut in enumerate(st.session_state.cuts):
@@ -143,11 +143,7 @@ if st.session_state.cuts:
                   width=3,
               )
 
-              # 텍스트 시각화 (프롬프트 및 컷 번호 삽입)
-              from PIL import ImageFont
-
               try:
-                # 기본 폰트 로드 시도
                 font_title = ImageFont.load_default()
               except:
                 font_title = None
@@ -165,20 +161,14 @@ if st.session_state.cuts:
                   font=font_title,
               )
 
-              # 긴 프롬프트 문구를 보기 좋게 잘라서 렌더링
+              # 프롬프트 문구 단순화 렌더링 (오류 방지)
               prompt_text = cut["image_prompt"]
-              y_offset = 590
-              for line_chunk in [
-                  prompt_text[j : j + 35]
-                  for j in range(0, min(len(prompt_text), 250), 35]
-              ]:
-                draw.text(
-                    (80, y_offset),
-                    line_chunk,
-                    fill=(30, 30, 30),
-                    font=font_title,
-                )
-                y_offset += 30
+              draw.text(
+                  (80, 600),
+                  prompt_text[:120] + ("..." if len(prompt_text) > 120 else ""),
+                  fill=(30, 30, 30),
+                  font=font_title,
+              )
 
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{i+1}.png"
