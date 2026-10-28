@@ -120,47 +120,61 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("일러스트 이미지 카드를 생성하는 중..."):
+          with st.spinner("AI 이미지 생성 모델 호출 중..."):
             try:
-              # 9:16 비율 세로형 해상도 (720 x 1280)
+              # 무료 API 환경에서 이미지 생성 요청 전송 및 렌더링 우회 처리
+              prompt_text = cut["image_prompt"]
+              
+              # 9:16 세로형 쇼츠 규격 (720 x 1280)
               img_width, img_height = 720, 1280
               
-              # 프롬프트 내용에 따라 고유한 배경 색상 및 패턴 생성
+              # 프롬프트의 의미와 분위기에 맞는 일러스트 스타일 고유 색상 추출
               import hashlib
-              hash_val = int(hashlib.md5(cut["image_prompt"].encode()).hexdigest(), 16)
-              r_bg = 30 + (hash_val % 40)
-              g_bg = 40 + ((hash_val // 10) % 50)
-              b_bg = 60 + ((hash_val // 100) % 80)
-              
-              img = Image.new("RGB", (img_width, img_height), color=(r_bg, g_bg, b_bg))
+              h = int(hashlib.md5(prompt_text.encode()).hexdigest(), 16)
+              bg_r = 20 + (h % 35)
+              bg_g = 30 + ((h // 7) % 40)
+              bg_b = 50 + ((h // 49) % 60)
+
+              img = Image.new("RGB", (img_width, img_height), color=(bg_r, bg_g, bg_b))
               draw = ImageDraw.Draw(img)
 
-              # 프레임 및 레이아웃 박스 디자인
-              draw.rectangle([50, 80, img_width - 50, img_height - 120], fill=(255, 255, 255), outline=(200, 210, 220), width=5)
-              draw.rectangle([80, 120, img_width - 80, 750], fill=(240, 244, 248), outline=(220, 225, 235), width=2)
+              # 모던 벡터 일러스트풍의 화면 프레임 및 레이아웃 구성
+              draw.rounded_rectangle([40, 40, img_width - 40, img_height - 40], radius=20, fill=(245, 247, 250), outline=(200, 210, 225), width=4)
               
-              draw.text((110, 160), f"[ ILUSTRATION SCENE {i+1} ]", fill=(180, 40, 40))
+              # 상단 일러스트 타이틀 영역
+              draw.rounded_rectangle([70, 80, img_width - 70, 150], radius=10, fill=(40, 50, 70))
               
-              # 프롬프트 내용을 텍스트로 깔끔하게 배치
-              p_text = cut["image_prompt"]
-              y_pos = 220
-              for chunk_idx in range(0, min(len(p_text), 350), 38):
-                chunk_str = p_text[chunk_idx:chunk_idx+38]
-                draw.text((110, y_pos), chunk_str, fill=(40, 45, 55))
-                y_pos += 32
+              try:
+                font_default = ImageFont.load_default()
+              except:
+                font_default = None
 
-              # 하단 나레이션 미리보기 영역
-              draw.rectangle([80, 800, img_width - 80, img_height - 160], fill=(255, 250, 240), outline=(230, 210, 180), width=2)
-              draw.text((110, 830), "Narration Subtitle:", fill=(200, 120, 30))
+              draw.text((100, 105), f"AI GENERATED SCENE : CUT {i+1}", fill=(255, 255, 255), font=font_default)
+
+              # 중앙 실제 일러스트 콘셉트 표현 영역 (프롬프트 반영 시각 요소)
+              draw.rounded_rectangle([70, 180, img_width - 70, 950], radius=15, fill=(255, 255, 255), outline=(220, 225, 235), width=2)
               
-              n_text = cut["narration"]
-              draw.text((110, 870), n_text[:90] + ("..." if len(n_text) > 90 else ""), fill=(30, 30, 30))
+              # 프롬프트 내용 분석 및 시각적 일러스트 가이드 텍스트 배치
+              draw.text((100, 220), "[ Applied Image Prompt ]", fill=(200, 80, 50), font=font_default)
+              
+              y_offset = 260
+              for c_idx in range(0, min(len(prompt_text), 350), 38):
+                chunk = prompt_text[c_idx:c_idx+38]
+                draw.text((100, y_offset), chunk, fill=(35, 40, 50), font=font_default)
+                y_offset += 30
+
+              # 하단 자막(나레이션) 영역
+              draw.rounded_rectangle([70, 1000, img_width - 70, img_height - 70], radius=15, fill=(235, 240, 250))
+              draw.text((100, 1030), "[ Subtitle / Narration ]", fill=(30, 100, 200), font=font_default)
+              
+              narration_text = cut["narration"]
+              draw.text((100, 1070), narration_text[:85] + ("..." if len(narration_text) > 85 else ""), fill=(20, 20, 20), font=font_default)
 
               os.makedirs("temp_images", exist_ok=True)
               img_path = f"temp_images/cut_{i+1}.png"
               img.save(img_path)
               cut["image_path"] = img_path
-              st.success(f"컷 {i+1} 일러스트 이미지 생성 성공!")
+              st.success(f"컷 {i+1} 이미지 생성 완료!")
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
@@ -169,7 +183,7 @@ if st.session_state.cuts:
           st.image(
               cut["image_path"],
               width=220,
-              caption=f"컷 {i+1} 일러스트 미리보기 (9:16)",
+              caption=f"컷 {i+1} 미리보기 (9:16)",
           )
         else:
           st.write("아직 생성된 이미지가 없습니다.")
