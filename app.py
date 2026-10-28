@@ -78,7 +78,7 @@ if st.button("🎬 6~8컷 시나리오 및 이미지 프롬프트 생성"):
             """
       try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3.8-flash",
             contents=prompt,
         )
 
