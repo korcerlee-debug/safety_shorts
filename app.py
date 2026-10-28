@@ -122,29 +122,39 @@ if st.session_state.cuts:
             key=f"prompt_{i}",
         )
         if st.button(f"🎨 이 컷 이미지 생성/재생성", key=f"gen_{i}"):
-          with st.spinner("프롬프트에 맞는 순수 일러스트 이미지를 생성하는 중..."):
+          with st.spinner("AI가 프롬프트에 맞는 이미지를 그리는 중... (약 10초 소요)"):
             try:
-              # 텍스트가 절대 들어가지 않도록 프롬프트 제어 강화
               user_prompt = cut["image_prompt"]
               clean_prompt = (
                   f"{user_prompt}, vertical 9:16 aspect ratio, clean modern"
-                  " digital illustration, vibrant colors, no text, no words,"
-                  " no letters"
+                  " digital illustration, vibrant colors, masterpiece, no text,"
+                  " no words, no letters"
               )
               encoded_prompt = urllib.parse.quote(clean_prompt)
               img_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&nologo=true&private=true"
 
-              # 이미지 다운로드 및 저장
-              img_res = requests.get(img_url, timeout=45)
+              # 브라우저 위장 헤더 추가하여 차단 우회
+              headers = {
+                  "User-Agent": (
+                      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36"
+                  )
+              }
+
+              img_res = requests.get(img_url, headers=headers, timeout=60)
               if img_res.status_code == 200:
                 image = Image.open(BytesIO(img_res.content))
                 os.makedirs("temp_images", exist_ok=True)
                 img_path = f"temp_images/cut_{i+1}.png"
                 image.save(img_path)
                 cut["image_path"] = img_path
-                st.success(f"컷 {i+1} 순수 AI 이미지 생성 완료!")
+                st.success(f"컷 {i+1} 순수 AI 이미지 생성 성공!")
               else:
-                st.error("이미지 서버 응답 실패. 다시 시도해 주세요.")
+                st.error(
+                    f"이미지 서버 응답 오류 (코드: {img_res.status_code})."
+                    " 잠시 후 다시 시도해 주세요."
+                )
             except Exception as e:
               st.error(f"이미지 생성 실패: {e}")
 
